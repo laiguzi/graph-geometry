@@ -120,6 +120,10 @@ class LLYOTSolver:
     def __post_init__(self):
         self.solver_name = resolve_lly_solver(self.solver)
 
+    def for_cost_scale(self, scale: float) -> LLYOTSolver:
+        """The signed KR objective is homogeneous in the cost matrix."""
+        return self
+
     def __call__(self, x, y, d) -> float:
         x = np.asarray(x, dtype=float)
         y = np.asarray(y, dtype=float)
@@ -182,6 +186,10 @@ class SignedKRTransportSolver:
         self._lp = LLYOTSolver(self.solver)
         self.solver_name = self._lp.solver_name
 
+    def for_cost_scale(self, scale: float) -> SignedKRTransportSolver:
+        """The signed KR objective is homogeneous in the cost matrix."""
+        return self
+
     def __call__(self, source_mass, target_mass, cost_matrix, *, return_plan=False):
         return TransportResult(cost=self._lp(source_mass, target_mass, cost_matrix))
 
@@ -189,6 +197,10 @@ class SignedKRTransportSolver:
 @dataclass
 class EMDOTSolver:
     """Standard Earth Mover's Distance via the POT library."""
+
+    def for_cost_scale(self, scale: float) -> EMDOTSolver:
+        """Opt the legacy exact EMD solver into cost conditioning."""
+        return self
 
     def __call__(self, x, y, d) -> float:
         x = np.asarray(x, dtype=float)

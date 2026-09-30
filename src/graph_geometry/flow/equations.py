@@ -11,8 +11,10 @@ expressions (``ExpressionFlow``).
 from __future__ import annotations
 
 import ast
+import io
 import math
 import re
+import tokenize
 from dataclasses import dataclass
 from typing import Callable, Union
 
@@ -141,25 +143,36 @@ def latex_to_expr(text: str) -> str:
 _KEYWORDS = {"if", "else", "and", "or", "not"}
 
 
-_NOT_KW = r"(?!(?:if|else|and|or|not)\b)"  # don't glue onto a Python keyword
-
-
 def _insert_implicit_mult(s: str) -> str:
-    """Insert ``*`` for LaTeX-style implicit multiplication (``2w``, ``)w``, ``eta w``)."""
-    s = re.sub(r"\)\s*\(", ")*(", s)                          # )( -> )*(
-    s = re.sub(rf"\)\s*{_NOT_KW}([A-Za-z0-9_])", r")*\1", s)   # )x -> )*x
-    s = re.sub(rf"(\d)\s*{_NOT_KW}([A-Za-z_(])", r"\1*\2", s)  # 2x, 2( -> 2*x, 2*(
-    # adjacency: name/) then space then name/(, unless a keyword is involved
-    s = re.sub(
-        rf"([A-Za-z_]\w*|\))\s+{_NOT_KW}(?=[A-Za-z_(])",
-        lambda m: m.group(1) + (" " if m.group(1) in _KEYWORDS else "*"),
-        s,
-    )
+    """Insert multiplication between tokens, preserving numbers and function names.
 
-    def _name_paren(m):
-        name = m.group(1)
-        return f"{name}(" if name in _ALLOWED_FUNCS else f"{name}*("
-    return re.sub(r"([A-Za-z_]\w*)\s*\(", _name_paren, s)   # eta( -> eta*(, exp( kept
+    ``1e-3`` is one number and ``log10`` is one name: character-level rules
+    used to split both. The input has already been normalised to one line.
+    Syntax and the function/name allow-list are still checked by the AST pass.
+    """
+    try:
+        tokens = list(tokenize.generate_tokens(io.StringIO(s).readline))
+    except (tokenize.TokenError, IndentationError):
+        return s  # let _compile_expr report the original syntax error
+
+    def atom(token):
+        return token.type == tokenize.NUMBER or (
+            token.type == tokenize.NAME and token.string not in _KEYWORDS
+        )
+
+    parts, start = [], 0
+    for left, right in zip(tokens, tokens[1:]):
+        if not (atom(left) or left.string == ")"):
+            continue
+        if not (atom(right) or right.string == "("):
+            continue
+        if left.string in _ALLOWED_FUNCS and right.string == "(":
+            continue
+        position = left.end[1]
+        parts.extend((s[start:position], "*"))
+        start = position
+    parts.append(s[start:])
+    return "".join(parts)
 
 
 def _compile_expr(expr: str):

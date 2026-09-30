@@ -1143,11 +1143,9 @@ ABNORMAL_STOPS = {
     "diverged": (
         "Diverged",
         "**The flow diverged — the results below are still valid.**\n\n"
-        "Every state shown was committed before the update that would "
-        "have driven an edge's evolving quantity to zero or below; the "
-        "convergence chart shows the curvature spread growing rather "
-        "than shrinking. This is a property of the chosen curvature and "
-        "flow equation on this graph, not a failed computation.",
+        "Every state shown was committed before an update failed to produce "
+        "finite positive edge quantities. The diagnosis below identifies "
+        "the invalid value or flow-expression error.",
     ),
     "undefined": (
         "Stopped",
@@ -1333,7 +1331,7 @@ if st.session_state.done and st.session_state.sim is not None:
     m1, m2, m3, m4, m5, m6 = st.columns(6)
     m1.metric("Iterations",      sim.result.iterations_completed)
     m2.metric("Final RC diff",
-              f"{sim.convergence[-1]:.2e}" if sim.convergence else "—")
+              f"{max(rc_final) - min(rc_final):.2e}" if rc_final else "undefined")
     m3.metric("Stopped because", sim.termination_reason or "—")
     m4.metric("Initial RC range", _range(rc_init))
     m5.metric("Final RC range",   _range(rc_final))

@@ -45,6 +45,7 @@ __all__ = [
     "PairMeasureBuilder",
     "GroundCostBuilder",
     "TransportSolver",
+    "CostScalableTransportSolver",
     "OTCurvatureConfig",
     "BoundPairMeasures",
     "EndpointKernel",
@@ -142,6 +143,12 @@ class GroundCostBuilder(Protocol):
 
 
 class TransportSolver(Protocol):
+    """Solve using the original ground-cost units by default.
+
+    A solver may additionally implement ``for_cost_scale(scale)`` to opt into
+    numerical conditioning; see :class:`CostScalableTransportSolver`.
+    """
+
     def __call__(
         self,
         source_mass: np.ndarray,
@@ -150,6 +157,25 @@ class TransportSolver(Protocol):
         *,
         return_plan: bool = False,
     ) -> TransportResult: ...
+
+
+class CostScalableTransportSolver(TransportSolver, Protocol):
+    """Optional, explicit support for dividing the cost matrix by ``scale``.
+
+    ``for_cost_scale`` receives a finite positive scale and returns a solver
+    configured for ``C / scale``, without modifying the original solver. Its
+    returned cost must equal the original cost divided by ``scale`` and its
+    transport plan must solve the original problem. The engine restores the
+    cost's original units; it does not rescale the plan.
+
+    Homogeneous exact solvers can return ``self``. Regularised solvers must
+    also transform parameters in cost units (e.g. ``reg / scale`` for
+    Sinkhorn). Returning ``None`` declines scaling for this call; omitting
+    the method declines it altogether. A method returning another callable
+    does not need to inherit this protocol.
+    """
+
+    def for_cost_scale(self, scale: float) -> Optional[TransportSolver]: ...
 
 
 # ── endpoint measures: kernel -> distribution, per endpoint role ────────────
@@ -451,6 +477,10 @@ class ShortestPathGroundCost:
 class EMDTransportSolver:
     """Exact earth mover's distance (POT). The plan is computed only on request."""
 
+    def for_cost_scale(self, scale: float) -> EMDTransportSolver:
+        """EMD is homogeneous in the cost; its minimisers are unchanged."""
+        return self
+
     def __call__(self, source_mass, target_mass, cost_matrix, *, return_plan=False):
         import ot
 
@@ -465,9 +495,26 @@ class EMDTransportSolver:
 
 @dataclass
 class LegacyTransportSolver:
-    """Adapt a ``(x, y, cost) -> float`` solver from a :class:`CurvatureConfig`."""
+    """Adapt a ``(x, y, cost) -> float`` solver from a :class:`CurvatureConfig`.
+
+    Scaling is enabled only if the wrapped solver implements
+    ``for_cost_scale`` with the same contract as the modern solver protocol.
+    """
 
     solver: OTSolverFn
+
+    def for_cost_scale(self, scale: float) -> Optional[LegacyTransportSolver]:
+        rescale = getattr(self.solver, "for_cost_scale", None)
+        if rescale is None:
+            return None
+        if not callable(rescale):
+            raise CurvatureContractError("solver.for_cost_scale must be callable.")
+        solver = rescale(scale)
+        if solver is None:
+            return None
+        if not callable(solver):
+            raise CurvatureContractError("solver.for_cost_scale must return a callable or None.")
+        return LegacyTransportSolver(solver)
 
     def __call__(self, source_mass, target_mass, cost_matrix, *, return_plan=False):
         cost = self.solver(
@@ -502,6 +549,9 @@ class OTCurvatureConfig:
     this ``d(x, y)`` the curvature is defined as 0; ``None``, the default and
     what every shipped definition uses, disables it. The historical absolute
     1e-7 guard made kappa depend on the unit of the metric).
+
+    Cost conditioning is opt-in on ``solver`` through ``for_cost_scale``;
+    otherwise the solver always receives the original cost matrix.
     """
 
     name: str
@@ -544,4 +594,3 @@ class OTCurvatureConfig:
     def measure_builder(self) -> Any:
         """The pair measure builder the engine runs: K_c and D_c at each endpoint."""
         return self._measure_builder
-

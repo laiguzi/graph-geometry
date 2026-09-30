@@ -286,15 +286,16 @@ def test_changing_a_flow_parameter_invalidates_only_the_simulation():
     assert at.session_state["sim"] is None
 
 
-def test_exhausted_final_snapshot_renders_without_a_convergence_value():
+@pytest.mark.parametrize("interval", [1, 2])
+def test_exhausted_final_snapshot_renders_without_a_convergence_value(interval):
     at = _run()
     _by_label(at.selectbox, "Graph").set_value("🔀 Two K₄ + bridge (dir.)").run()
-    # Interval surgery begins after the first update, so two iterations are
-    # needed for an interval of one to exercise the surgery commit.
+    # With interval 2 the history contains a nonempty state's spread, which
+    # must not be displayed as the final empty graph's spread.
     _by_label(at.number_input, "Iterations").set_value(2).run()
     _by_label(at.selectbox, "Type").set_value("surgery_n").run()
     _by_label(at.number_input, "Cut N edges").set_value(26).run()
-    _by_label(at.slider, "Every N iterations").set_value(1).run()
+    _by_label(at.slider, "Every N iterations").set_value(interval).run()
 
     at.button(key="run_flow").click().run()
     assert not at.exception, at.exception
@@ -302,11 +303,42 @@ def test_exhausted_final_snapshot_renders_without_a_convergence_value():
     assert sim.termination_reason == "exhausted"
     assert sim.result_graph.number_of_edges() == 0
     assert len(sim.convergence) == len(sim.snapshots) - 2
+    assert _by_label(at.metric, "Final RC diff").value == "undefined"
 
     _by_label(at.slider, "Iteration").set_value(len(sim.snapshots) - 1).run()
     assert not at.exception, at.exception
     assert any(metric.label == "RC diff" and metric.value == "undefined"
                for metric in at.metric)
+
+
+def test_formula_error_keeps_the_trajectory_visible_in_the_interface():
+    at = _run()
+    _by_label(at.selectbox, "Graph").set_value("── Two K₄ + bridge").run()
+    _curvature_select(at).set_value(gg.CURVATURE_REGISTRY["ollivier"]).run()
+    _by_label(at.selectbox, "Flow equation").set_value("Custom (expression)").run()
+    _by_label(at.text_input, "Flow expression").set_value("eta*exp(q)").run()
+    _by_label(at.number_input, "Step").set_value(1.0).run()
+    at.button(key="run_flow").click().run()
+
+    assert not at.exception, at.exception
+    sim = at.session_state["sim"]
+    assert at.session_state["done"] is True
+    assert sim.termination_reason == "diverged"
+    assert sim.result.iterations_completed == 3
+    assert any(sim.result.diagnosis == block.value for block in at.code)
+    assert "OverflowError" in sim.result.diagnosis
+    values = [d["ricciCurvature"] for _, _, d in sim.result_graph.edges(data=True)]
+    assert _by_label(at.metric, "Final RC diff").value == f"{max(values) - min(values):.2e}"
+
+
+def test_scientific_notation_and_log10_run_from_the_interface():
+    at = _run()
+    _by_label(at.selectbox, "Flow equation").set_value("Custom (expression)").run()
+    _by_label(at.text_input, "Flow expression").set_value("-1e-3*log10(q+1)").run()
+    at.button(key="run_flow").click().run()
+    assert not at.exception, at.exception
+    assert at.session_state["done"] is True
+    assert at.session_state["sim"].result.iterations_completed >= 1
 
 
 # ── computing curvature in the UI, without running a flow ───────────────────

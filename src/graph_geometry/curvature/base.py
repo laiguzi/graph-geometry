@@ -24,7 +24,7 @@ from typing import Any, Iterable, Optional, Union
 import networkx as nx
 
 from ..graph.semantics import GraphSemantics
-from .errors import CurvatureConfigurationError, CurvatureDomainError
+from .errors import CurvatureConfigurationError, CurvatureContractError, CurvatureDomainError
 from .transport import LegacyTransportSolver, OTCurvatureConfig, TransportResult
 from .types import CurvatureFromOT, DistributionFn, OTSolverFn, TransitionKernelFn
 from .validate import validate_edge_attributes
@@ -88,9 +88,9 @@ def write_curvature(G: nx.Graph, edge_values: dict, attr: str = "ricciCurvature"
     return result
 
 
-#: Distances ``d(x, y)`` inside ``[2**-_SCALE_BAND, 2**_SCALE_BAND]`` are solved
-#: unscaled; outside it the cost matrix is divided by the power of two nearest
-#: ``d(x, y)``. This is conditioning only -- it never changes the definition.
+#: For solvers that opt into conditioning, use a power-of-two scale when the
+#: binary exponent of ``d(x, y)`` is outside [-_SCALE_BAND, _SCALE_BAND].
+#: Other solvers always receive the original costs.
 _SCALE_BAND = 8
 
 
@@ -204,14 +204,25 @@ class TransportCurvatureEngine:
             return (0.0, None) if details else 0.0
         mu, nu = self.measures(source, target)
         cost = self.config.ground_cost(mu, nu, lengths=self.lengths)
-        # Solve on a well-scaled cost matrix. The transport cost is linear in
-        # the ground cost, so dividing by a power of two and multiplying back
-        # is exact in floating point; it only keeps a solver's absolute
-        # tolerances meaningful when the metric is very small or very large.
-        # Inside the band nothing is rescaled, so ordinary inputs are solved
-        # bit for bit as before.
+        # Conditioning is a solver capability: regularisation and other
+        # nonlinear cost dependence must be transformed by the solver itself.
+        # Missing/declined support preserves the original problem verbatim.
+        solver = self.config.solver
         scale = _cost_scale(distance)
-        result = self.config.solver(
+        if scale != 1.0:
+            rescale = getattr(solver, "for_cost_scale", None)
+            if rescale is not None and not callable(rescale):
+                raise CurvatureContractError("solver.for_cost_scale must be callable.")
+            scaled_solver = rescale(scale) if rescale is not None else None
+            if scaled_solver is None:
+                scale = 1.0
+            elif not callable(scaled_solver):
+                raise CurvatureContractError(
+                    "solver.for_cost_scale must return a callable or None."
+                )
+            else:
+                solver = scaled_solver
+        result = solver(
             mu.mass, nu.mass, cost if scale == 1.0 else cost / scale,
             return_plan=self.config.return_plan or details,
         )

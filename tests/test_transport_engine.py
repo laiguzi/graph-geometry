@@ -6,6 +6,7 @@ neighbourhoods at its two endpoints through the same orchestration.
 """
 
 import math
+from dataclasses import replace
 
 import networkx as nx
 import numpy as np
@@ -25,6 +26,7 @@ from graph_geometry.curvature.transport import (
     NoIdlenessDistribution,
     NodeKernel,
     OTCurvatureConfig,
+    TransportResult,
 )
 
 
@@ -195,6 +197,84 @@ def test_lly_reports_its_objective_without_a_plan():
     engine = TransportCurvatureEngine(G, lin_lu_yau_ot_config(kernel="undirected"))
     (_, (_, _, _, result)), = engine.transport_details([(0, 1)]).values()
     assert result.plan is None
+
+
+@pytest.mark.parametrize("distance", [2.0 ** -12, 512.0])
+@pytest.mark.parametrize("legacy", [False, True])
+@pytest.mark.parametrize("decline", [False, True])
+def test_custom_solvers_keep_original_costs_unless_they_opt_in(distance, legacy, decline):
+    """Nonlinear costs cannot be divided and restored as a linear objective."""
+    G = _unit(nx.complete_graph(3))
+    nx.set_edge_attributes(G, distance, "distance")
+    seen = []
+
+    def raw_solver(a, b, cost):
+        seen.append(cost.copy())
+        return float((np.outer(a, b) * cost ** 2).sum())
+
+    def solver(a, b, cost, *, return_plan=False):
+        value = raw_solver(a, b, cost)
+        return TransportResult(value, np.outer(a, b) if return_plan else None)
+
+    implementation = raw_solver if legacy else solver
+    if decline:
+        implementation.for_cost_scale = lambda scale: None
+    config = (
+        replace(gg.ollivier(), ot_solver=implementation).to_ot_config()
+        if legacy else replace(ollivier_ot_config(), solver=implementation)
+    )
+    value, (mu, nu, cost, result) = TransportCurvatureEngine(
+        G, config
+    ).transport_details([(0, 1)])[(0, 1)]
+    assert len(seen) == 1
+    np.testing.assert_array_equal(seen[0], cost)
+    assert cost.max() == distance
+    expected = float((np.outer(mu.mass, nu.mass) * cost ** 2).sum())
+    assert result.cost == expected
+    assert value == 1.0 - expected / distance
+    if not legacy:
+        np.testing.assert_array_equal(result.plan, np.outer(mu.mass, nu.mass))
+
+
+@pytest.mark.parametrize("distance", [2.0 ** -40, 2.0 ** 40])
+@pytest.mark.parametrize("builder", [gg.ollivier, gg.lin_lu_yau])
+def test_legacy_exact_solvers_keep_conditioning_and_match_modern_results(distance, builder):
+    G = _unit(nx.complete_graph(3))
+    nx.set_edge_attributes(G, distance, "distance")
+    legacy = builder(kernel="undirected")
+    adapted = legacy.to_ot_config()
+    assert adapted.solver.for_cost_scale(distance) is not None
+    values = TransportCurvatureEngine(G, adapted).compute_edges()
+    method = "ollivier" if builder is gg.ollivier else "lin_lu_yau"
+    modern = gg.compute_curvature(G, method).values
+    assert values == pytest.approx(dict(modern), abs=1e-10)
+    expected = 0.75 if method == "ollivier" else 1.5
+    assert all(abs(v - expected) < 1e-10 for v in values.values())
+
+
+@pytest.mark.parametrize("scale", [2.0 ** -12, 512.0])
+def test_exact_emd_conditioning_restores_cost_and_preserves_plan(scale):
+    G = _unit(nx.complete_graph(3))
+    nx.set_edge_attributes(G, scale, "distance")
+    _, (mu, nu, cost, result) = TransportCurvatureEngine(
+        G, ollivier_ot_config()
+    ).transport_details([(0, 1)])[(0, 1)]
+    direct = EMDTransportSolver()(mu.mass, nu.mass, cost, return_plan=True)
+    assert result.cost == pytest.approx(direct.cost, rel=1e-12, abs=0)
+    np.testing.assert_allclose(result.plan.sum(axis=1), mu.mass)
+    np.testing.assert_allclose(result.plan.sum(axis=0), nu.mass)
+    assert float((result.plan * cost).sum()) == pytest.approx(result.cost, rel=1e-12, abs=0)
+
+
+def test_cost_scaling_contract_rejects_a_non_callable_result():
+    def solver(a, b, cost, *, return_plan=False):
+        raise AssertionError("invalid scaling support should be rejected before solving")
+
+    solver.for_cost_scale = lambda scale: 7
+    G = _unit(nx.path_graph(2))
+    nx.set_edge_attributes(G, 512.0, "distance")
+    with pytest.raises(gg.CurvatureContractError, match="callable or None"):
+        TransportCurvatureEngine(G, replace(ollivier_ot_config(), solver=solver)).compute_edges()
 
 
 # ── one orchestration for the three transport definitions ──────────────────

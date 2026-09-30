@@ -86,7 +86,7 @@ __all__ = ["RicciFlow", "FlowResult", "FlowDivergenceError", "TERMINATION_REASON
 
 
 class FlowDivergenceError(CurvatureNumericalError, ValueError):
-    """The first update already drives the evolving quantity non-positive.
+    """The first update cannot produce a finite positive evolving quantity.
 
     Raised only at iteration 0, where nothing beyond the input was committed;
     later divergence ends the run with ``termination_reason="diverged"`` instead.
@@ -144,7 +144,8 @@ class FlowResult:
         count was exhausted; ``degenerate`` means the evolving quantity summed
         to zero while edges remained, so no update was defined; ``diverged``
         means an update after the first committed iteration would have made the
-        evolving quantity non-positive or non-finite, so that candidate was not
+        evolving quantity non-positive or non-finite, or the flow equation
+        raised an arithmetic/domain error, so that candidate was not
         committed (on the very first update this raises
         :class:`FlowDivergenceError` instead, as there is no valid state to keep);
         ``undefined`` means the curvature is not defined on the topology a
@@ -373,12 +374,17 @@ class RicciFlow:
         def survives(scale: float) -> bool:
             for u, v in self.G.edges():
                 q = self.G[u][v][q_attr]
-                dq = self.flow_equation(
-                    self.G[u][v]["ricciCurvature"], q, step * scale, k_avg
-                )
+                try:
+                    dq = self.flow_equation(
+                        self.G[u][v]["ricciCurvature"], q, step * scale, k_avg
+                    )
+                    next_q = q + dq
+                    valid = math.isfinite(next_q) and next_q > 0
+                except (ArithmeticError, ValueError):
+                    return False
                 # written so that NaN fails: ``NaN <= 0`` is False, and the
                 # old test certified a NaN update as safe
-                if not (math.isfinite(q + dq) and q + dq > 0):
+                if not valid:
                     return False
             return True
 
@@ -410,9 +416,8 @@ class RicciFlow:
         safe = self._largest_safe_step(k_avg, step, q_attr)
         lines = [
             f"Ricci flow diverged at iteration {i}: the update with step={step:g} "
-            f"would make an edge's {q_attr} non-positive or non-finite, which is "
-            f"not a valid {q_attr}.",
-            f"  underlying check: {exc}",
+            f"could not produce a finite positive {q_attr} on every edge.",
+            f"  underlying check: {type(exc).__name__}: {exc}",
         ]
         if safe == 0.0:
             lines.append(
@@ -612,14 +617,14 @@ class RicciFlow:
 
             # 2-3. update a candidate copy, then recompute curvature on it
             candidate = self.G.copy()
-            for u, v in candidate.edges():
-                dq = self.flow_equation(
-                    candidate[u][v]["ricciCurvature"], candidate[u][v][q_attr], step, k_avg
-                )
-                candidate[u][v][q_attr] += dq
             try:
+                for u, v in candidate.edges():
+                    dq = self.flow_equation(
+                        candidate[u][v]["ricciCurvature"], candidate[u][v][q_attr], step, k_avg
+                    )
+                    candidate[u][v][q_attr] += dq
                 self._validate_evolving_quantity(candidate, where="Ricci flow update")
-            except ValueError as exc:
+            except (ArithmeticError, ValueError) as exc:
                 detail = self._divergence_diagnosis(
                     exc, i, k_avg, step, q_attr, convergence
                 )

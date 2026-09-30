@@ -1,6 +1,7 @@
 """Flow layer: trajectory parity vs ricciflow_sim + engine/equations/surgery."""
 
 import json
+import math
 from pathlib import Path
 
 import networkx as nx
@@ -138,6 +139,20 @@ def test_expression_flow_conditional_and_funcs():
     assert cond(1.0, 2.0, 0.1, 0.5) == pytest.approx(1.8)   # kappa>kbar branch
     assert cond(0.0, 2.0, 0.1, 0.5) == pytest.approx(2.0)   # else branch
     assert ExpressionFlow("max(-0.1, -step*kappa*w)")(1.0, 2.0, 0.1, 0.5) == pytest.approx(-0.1)
+
+
+@pytest.mark.parametrize("expr, expected", [
+    ("-1e-3*kappa*q", -0.01),
+    ("-2.5E-2*kappa*q", -0.25),
+    ("-1e-3 kappa q", -0.01),
+    ("-1e-3(kappa-kbar)q", -0.01),
+    (r"-\eta log10(q)", -0.01),
+    ("-eta*log10(q)", -0.01),
+    ("-eta*log10 (q)", -0.01),
+    ("-eta*log10(q) if kappa>kbar else 0", -0.01),
+])
+def test_expression_flow_preserves_number_and_function_tokens(expr, expected):
+    assert gg.expression_flow(expr)(1.0, 10.0, 0.01, 0.0) == pytest.approx(expected)
 
 
 def test_expression_flow_rejects_unsafe():
@@ -677,6 +692,83 @@ def test_an_invalid_first_update_still_raises_rather_than_returning_nothing():
         gg.RicciFlow(
             G, curvature=constant, flow_equation=negate_quantity, evolve="distance"
         ).run(iterations=5, early_stop=False)
+
+
+@pytest.mark.parametrize("equation, completed, error", [
+    ("eta*exp(q)", 3, "OverflowError"),
+    (lambda k, q, eta, mean: eta * math.exp(q), 3, "OverflowError"),
+    ("1/(2-q)", 1, "ZeroDivisionError"),
+    ("sqrt(2-q)+1", 1, "ValueError"),
+])
+def test_formula_errors_return_only_completed_states(tmp_path, equation, completed, error):
+    G = _assign(nx.path_graph(3))
+    original = G.copy()
+    engine = gg.RicciFlow(G, curvature="ollivier", flow_equation=equation)
+    reported = []
+    result = engine.run(
+        iterations=10, step=1.0, early_stop=False, save_dir=str(tmp_path),
+        progress_callback=lambda i, total, spread: reported.append(i + 1),
+    )
+
+    assert result.termination_reason == engine.termination_reason == "diverged"
+    assert result.iterations_completed == completed
+    assert len(result.snapshots) == completed + 1
+    assert len(result.convergence) == completed
+    assert reported == list(range(1, completed + 1))
+    assert error in result.diagnosis
+    assert nx.utils.graphs_equal(G, original)
+    assert nx.utils.graphs_equal(engine.G, result.snapshots[-1])
+    assert not (tmp_path / f"{completed + 1}.gexf").exists()
+    for snapshot in result.snapshots:
+        assert all(math.isfinite(d["weight"]) and d["weight"] > 0
+                   for _, _, d in snapshot.edges(data=True))
+        fresh = gg.compute_curvature(snapshot, "ollivier").values
+        for edge, value in fresh.items():
+            assert snapshot.edges[edge]["ricciCurvature"] == pytest.approx(value)
+
+
+def test_formula_error_discards_an_entire_partially_updated_candidate():
+    G = _assign(nx.path_graph(3))
+    G[0][1]["weight"] = 0.5
+    engine = gg.RicciFlow(G, curvature="ollivier", flow_equation="1/(2-q)")
+    result = engine.run(iterations=5, early_stop=False)
+    assert result.iterations_completed == 1
+    assert result.termination_reason == "diverged"
+    # On update 2, edge (0, 1) updates successfully before edge (1, 2) fails.
+    assert engine.G[0][1]["weight"] == pytest.approx(0.5 + 1 / 1.5)
+    assert engine.G[1][2]["weight"] == 2.0
+
+
+def test_formula_error_on_the_first_update_still_raises_a_typed_error():
+    from graph_geometry.flow import FlowDivergenceError
+
+    engine = gg.RicciFlow(nx.path_graph(3), curvature="ollivier",
+                          flow_equation="exp(1000)*q")
+    with pytest.raises(FlowDivergenceError, match="OverflowError") as exc:
+        engine.run(iterations=5, early_stop=False)
+    assert isinstance(exc.value.__cause__, OverflowError)
+
+
+def test_formula_safe_step_diagnosis_handles_overflow_during_bisection():
+    engine = gg.RicciFlow(_assign(nx.path_graph(3)), curvature="ollivier",
+                          flow_equation="exp(eta*q)")
+    result = engine.run(iterations=10, step=2.0, early_stop=False)
+    assert result.termination_reason == "diverged"
+    assert result.iterations_completed == 2
+    safe = engine._largest_safe_step(0.0, 2.0, "weight")
+    assert 0 < safe < 2.0
+    resumed = gg.RicciFlow(result.snapshots[-1], curvature="ollivier",
+                           flow_equation="exp(eta*q)")
+    assert resumed.run(iterations=1, step=safe * 0.99, early_stop=False).iterations_completed == 1
+
+
+def test_flow_does_not_swallow_unrelated_plugin_errors():
+    def buggy_equation(kappa, q, step, mean):
+        raise TypeError("plugin implementation bug")
+
+    with pytest.raises(TypeError, match="plugin implementation bug"):
+        gg.RicciFlow(nx.path_graph(3), curvature="ollivier",
+                     flow_equation=buggy_equation).run()
 
 # ── surgery defaults and validation (audit fixes) ───────────────────────────
 

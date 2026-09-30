@@ -265,6 +265,72 @@ def test_sinkhorn_solver_is_picklable(plugins):
     assert pickle.loads(pickle.dumps(solver)).reg == 0.05
 
 
+@pytest.mark.parametrize("distance", [2.0 ** -12, 1.0, 511.0, 512.0, 513.0])
+def test_sinkhorn_conditioning_matches_original_problem_and_plan(plugins, distance):
+    """The former engine silently jumped from kappa .75 to .507 at d=512."""
+    from graph_geometry.curvature import TransportCurvatureEngine
+
+    G = _undirected(3)
+    nx.set_edge_attributes(G, distance, "distance")
+    config = plugins["sinkhorn"].sinkhorn_ollivier_config(0.5, 1.0, "undirected")
+    value, (mu, nu, cost, result) = TransportCurvatureEngine(
+        G, config
+    ).transport_details([(0, 1)])[(0, 1)]
+    direct = config.solver(mu.mass, nu.mass, cost, return_plan=True)
+    assert result.cost == pytest.approx(direct.cost, rel=1e-10, abs=0)
+    np.testing.assert_allclose(result.plan, direct.plan, rtol=1e-9, atol=1e-10)
+    assert value == pytest.approx(1.0 - direct.cost / distance, abs=1e-10)
+    assert config.solver.reg == 1.0
+    if distance >= 511.0:
+        assert value == pytest.approx(0.75, abs=1e-7)
+
+
+def test_sinkhorn_conditioning_copies_parameters_and_preserves_regularisation(plugins):
+    solver = plugins["sinkhorn"].SinkhornOTSolver(reg=3.0, num_iter=4321, tol=1e-7)
+    scaled = solver.for_cost_scale(512.0)
+    assert scaled is not solver
+    assert solver.reg == 3.0
+    assert (scaled.reg, scaled.num_iter, scaled.tol) == (3.0 / 512.0, 4321, 1e-7)
+    assert pickle.loads(pickle.dumps(scaled)) == scaled
+
+
+@pytest.mark.parametrize("factor", [2.0 ** -12, 512.0])
+def test_sinkhorn_change_of_units_requires_scaling_distance_and_reg(factor):
+    G = _cycle_with_chord()
+    reference = gg.compute_curvature(
+        G, gg.CurvatureRequest("sinkhorn_ollivier", {"reg": 0.5})
+    ).values
+    nx.set_edge_attributes(G, factor, "distance")
+    request = gg.CurvatureRequest("sinkhorn_ollivier", {"reg": 0.5 * factor})
+    result = gg.compute_curvature(G, request)
+    assert dict(result.values) == pytest.approx(dict(reference), abs=1e-8)
+    assert result.resolved.parameters["reg"] == 0.5 * factor
+
+
+def test_sinkhorn_scaled_edges_and_non_edges_agree_in_parallel(monkeypatch):
+    monkeypatch.syspath_prepend(str(EXAMPLES))  # spawn workers must import the plugin
+    G = _undirected(3)
+    G.add_edge(2, 3, weight=1.0, distance=2048.0)
+    nx.set_edge_attributes(G, {(0, 1): 511.0, (0, 2): 512.0, (1, 2): 1024.0}, "distance")
+    request = gg.CurvatureRequest("sinkhorn_ollivier", {"reg": 200.0})
+    serial = gg.compute_curvature(G, request, proc=1)
+    parallel = gg.compute_curvature(G, request, proc=2)
+    assert dict(parallel.values) == pytest.approx(dict(serial.values), abs=1e-10)
+    pairs = [(0, 1), (0, 3), (3, 0)]
+    serial_pairs = gg.compute_pair_curvature(G, request, pairs, proc=1)
+    parallel_pairs = gg.compute_pair_curvature(G, request, pairs, proc=2)
+    assert dict(parallel_pairs.values) == pytest.approx(dict(serial_pairs.values), abs=1e-10)
+    assert serial_pairs.values[(0, 1)] == pytest.approx(serial.values[(0, 1)])
+    assert serial.resolved.parameters["reg"] == parallel.resolved.parameters["reg"] == 200.0
+
+
+@pytest.mark.parametrize("reg, scale", [(1e-300, 1e300), (1e300, 1e-300)])
+def test_sinkhorn_can_decline_an_unrepresentable_regularisation_scale(plugins, reg, scale):
+    solver = plugins["sinkhorn"].SinkhornOTSolver(reg=reg)
+    assert solver.for_cost_scale(scale) is None
+    assert solver.reg == reg
+
+
 def test_sinkhorn_converges_to_exact_ollivier_through_compute_curvature():
     G = _cycle_with_chord()
     exact = gg.compute_curvature(G, gg.CurvatureRequest("ollivier", {"alpha": 0.5})).values

@@ -17,14 +17,18 @@ solver::
 The engine still builds the endpoint measures, computes the shortest-path cost
 matrix, evaluates every edge or requested pair and batches over ``proc``.
 
-Sinkhorn solves a strictly convex relaxation
+Sinkhorn finds the entropically regularised plan
 
-    W_reg(a, b) = min_P  <P, C> - reg * H(P)
+    P_reg = argmin_P  <P, C> - reg * H(P).
 
-whose value converges to the exact W_1 as ``reg -> 0``, so ``kappa_reg ->
-kappa`` from below in the regularisation (it over-estimates transport cost, so
-it under-estimates curvature). ``method="sinkhorn_log"`` runs the iteration in
-log space, which is what makes small ``reg`` numerically usable.
+The reported cost is ``<P_reg, C>`` (without the entropy term), which is at
+least the exact W_1 for a feasible plan and approaches it as ``reg -> 0``.
+Thus its curvature approaches exact Ollivier curvature from below.
+``method="sinkhorn_log"`` runs the iteration in log space.
+
+``reg`` is in the original ground-cost units. The solver explicitly supports
+engine conditioning through ``for_cost_scale``: dividing C by a scale also
+divides reg by that scale, preserving the plan and the user's definition.
 
 The registration declares everything the package needs before any numerical
 work: both graph kinds, edges and node pairs, the three channels it reads, and
@@ -69,6 +73,13 @@ class SinkhornOTSolver:
     reg: float = 0.01
     num_iter: int = 100_000
     tol: float = 1e-6
+
+    def for_cost_scale(self, scale: float) -> SinkhornOTSolver | None:
+        """Configure a copy for C / scale while retaining the same optimal plan."""
+        reg = self.reg / scale
+        if not np.isfinite(reg) or reg <= 0.0:
+            return None  # preserve original units if reg cannot be represented
+        return replace(self, reg=reg)
 
     def __call__(self, source_mass, target_mass, cost_matrix, *, return_plan=False):
         a = np.asarray(source_mass, dtype=float)
@@ -128,7 +139,7 @@ def sinkhorn_ollivier_pairs(G, pairs, *, semantics, proc, alpha, reg, kernel, be
         gg.ParameterSpec("alpha", "float", 0.5, minimum=0.0, maximum=1.0,
                          description="Idleness: mass kept at the node itself."),
         gg.ParameterSpec("reg", "float", 0.01, minimum=0.0, minimum_inclusive=False,
-                         description="Entropic regularisation; smaller is closer to exact."),
+                         description="Entropic regularisation in ground-cost units; smaller is closer to exact."),
         gg.ParameterSpec("kernel", "choice", "auto", choices=KERNELS,
                          description="Neighbourhood convention; 'auto' is resolved."),
         gg.ParameterSpec("beta", "float", 0.8, minimum=0.0, maximum=1.0,

@@ -92,6 +92,7 @@ from .model import (
 )
 from .ot_ricci import lin_lu_yau, lin_lu_yau_ot_config, ollivier, ollivier_ot_config
 from .transport import (
+    CostScalableTransportSolver,
     DirectionalKernel,
     DiscreteMeasure,
     EMDTransportSolver,
@@ -102,6 +103,7 @@ from .transport import (
     OTCurvatureConfig,
     ShortestPathGroundCost,
     TransportResult,
+    TransportSolver,
 )
 from .registry import (
     CURVATURE_ALIASES,
@@ -158,6 +160,8 @@ __all__ = [
     "OTCurvatureConfig",
     "DiscreteMeasure",
     "TransportResult",
+    "TransportSolver",
+    "CostScalableTransportSolver",
     "KernelPairMeasureBuilder",
     "NodeKernel",
     "DirectionalKernel",
