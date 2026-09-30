@@ -1,0 +1,40 @@
+# Cora citation network (migrated from config_cora.json)
+data:
+  graph_kind: directed
+  dataset: cora
+  data_root: data
+  factors:
+    edge_weight: fixed
+    edge_distance: fixed
+    node_factor: fixed
+
+semantics:
+  weight_attr: weight
+  distance_attr: distance
+  node_weight_attr: null
+  beta_attr: beta
+  missing_weight: unit
+  missing_distance: unit
+
+curvature:
+  method: lin_lu_yau
+  parameters:
+    kernel: mixed
+    beta_strategy: constant
+    beta: 0.8
+
+execution:
+  proc: 1
+
+flow:
+  equation: normalized
+  evolve: weight
+  iterations: 2000
+  step: 0.01
+  delta: 1.0e-6
+  early_stop: true
+
+surgery:
+  name: surgery_n
+  portion: 1
+  interval: 30

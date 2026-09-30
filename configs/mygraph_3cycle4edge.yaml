@@ -1,0 +1,48 @@
+# 3-cycle-with-chord, fixed factors, beta=0.8 LLY (migrated from
+# directed_ricciflow/RicciFlow/Configs/config.json)
+#
+# Kept at the migrated values. Note that the surgery below cuts one edge at
+# iteration 30, and if that edge is a cycle edge the 3-node digraph stops being
+# strongly connected, so lin_lu_yau stops as "undefined" after update 30
+# instead of continuing on a component. Drop the surgery section, or use
+# eidi_jost / forman_directed, for a run that reaches iteration 1000.
+data:
+  graph_kind: directed
+  dataset: mygraph
+  variant: 3cycle4edge
+  data_root: data
+  factors:
+    edge_weight: fixed
+    edge_distance: fixed
+    node_factor: fixed
+
+semantics:
+  weight_attr: weight
+  distance_attr: distance
+  node_weight_attr: null
+  beta_attr: beta
+  missing_weight: unit
+  missing_distance: unit
+
+curvature:
+  method: lin_lu_yau
+  parameters:
+    kernel: mixed
+    beta_strategy: constant
+    beta: 0.8
+
+execution:
+  proc: 1
+
+flow:
+  equation: normalized
+  evolve: weight
+  iterations: 1000
+  step: 0.01
+  delta: 1.0e-6
+  early_stop: true
+
+surgery:
+  name: surgery_n
+  portion: 1
+  interval: 30

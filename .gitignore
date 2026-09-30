@@ -1,0 +1,30 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+
+# Example / run outputs
+*.png
+*.gif
+examples/*.png
+results/
+
+# iCloud conflict copies
+*[0-9].py
+* [0-9].*
+
+# macOS
+.DS_Store
+
+# Fetched from SNAP on first use; not redistributed (no licence)
+/data/email_EU_core/

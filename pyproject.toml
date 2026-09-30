@@ -1,0 +1,57 @@
+[project]
+name = "graph-geometry"
+version = "0.1.0"
+description = "Discrete curvature and curvature flow on graphs, with pluggable curvature definitions and flow equations."
+readme = "README.md"
+authors = [
+    { name = "Xin Lai", email = "laixin@bimsa.cn" }
+]
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["discrete-curvature", "ricci-curvature", "curvature-flow", "network-geometry", "optimal-transport", "graphs"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Mathematics",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "cvxpy>=1.7.5",
+    "networkx>=3.4.2",
+    "numpy>=2.2.6",
+    "pot>=0.9.7",
+    "pyyaml>=6.0.3",
+]
+
+[project.optional-dependencies]
+viz = [
+    "matplotlib>=3.10.9",
+]
+app = [
+    "matplotlib>=3.10.9",
+    "streamlit>=1.59.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.10.6,<0.11.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.15.20",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "src"]
+filterwarnings = [
+    # benign: viz test creates a FuncAnimation it doesn't render
+    "ignore:Animation was deleted without rendering anything:UserWarning",
+]
+
+# Point the language server at the uv-managed virtualenv so imports resolve.
+[tool.pyright]
+venvPath = "."
+venv = ".venv"

@@ -1,0 +1,76 @@
+cff-version: 1.2.0
+title: >-
+  graph_geometry: a plugin architecture for discrete
+  curvature and curvature flow on networks
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: Xin
+    family-names: Lai
+    email: laixin@bimsa.cn
+    affiliation: >-
+      Beijing Institute of Mathematical Sciences and Applications;
+      Yau Mathematical Sciences Center, Tsinghua University
+repository-code: 'https://github.com/laiguzi/graph-geometry'
+abstract: >-
+  A Python package in which discrete Ricci curvature
+  definitions and Ricci flow equations are plugins:
+  optimal-transport curvatures are expressed as four
+  swappable components, any other curvature as a single
+  function honouring one result contract, and flow
+  equations as four-argument callables or typed
+  math/LaTeX expressions. Definitions register under a
+  name and are usable identically from the Python API, a
+  YAML experiment file, and an interactive interface.
+keywords:
+  - Ricci curvature
+  - Ricci flow
+  - network geometry
+  - optimal transport
+  - graph theory
+license: MIT
+version: 0.1.0
+date-released: '2026-08-04'
+references:
+  - type: article
+    authors:
+      - family-names: Ollivier
+        given-names: Yann
+    title: Ricci curvature of Markov chains on metric spaces
+    journal: Journal of Functional Analysis
+    year: 2009
+  - type: article
+    authors:
+      - family-names: Lin
+        given-names: Yong
+      - family-names: Lu
+        given-names: Linyuan
+      - family-names: Yau
+        given-names: Shing-Tung
+    title: Ricci curvature of graphs
+    journal: Tohoku Mathematical Journal
+    year: 2011
+  - type: article
+    authors:
+      - family-names: Eidi
+        given-names: Marzieh
+      - family-names: Jost
+        given-names: Jürgen
+    title: Ollivier Ricci curvature of directed hypergraphs
+    journal: Scientific Reports
+    year: 2020
+  - type: generic
+    authors:
+      - family-names: Bai
+        given-names: Shuliang
+      - family-names: Li
+        given-names: Rui
+      - family-names: Liu
+        given-names: Shuang
+      - family-names: Lai
+        given-names: Xin
+    title: Ricci Flow on Weighted Digraphs with Balancing Factor
+    year: 2025
+    notes: arXiv:2509.19989
