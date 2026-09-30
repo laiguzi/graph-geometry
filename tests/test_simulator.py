@@ -68,3 +68,57 @@ def test_summary_runs(capsys):
     sim.summary()
     out = capsys.readouterr().out
     assert "Ricci Flow Simulation Summary" in out
+
+
+@pytest.mark.parametrize("interval", [1, 2])
+def test_summary_reports_undefined_final_spread_after_exhaustion(capsys, interval):
+    G = nx.barbell_graph(4, 0)
+    sim = gg.RicciFlowSimulator.from_networkx(G, curvature="ollivier").run(
+        iterations=3, early_stop=False,
+        surgery={"name": "surgery_n", "portion": G.number_of_edges(), "interval": interval},
+    )
+    assert sim.termination_reason == "exhausted"
+    assert sim.result_graph.number_of_edges() == 0
+    assert len(sim.convergence) == interval - 1
+
+    sim.summary()
+    out = capsys.readouterr().out
+    assert "Final RC difference  : undefined" in out
+    assert "RC  initial :" in out
+    assert "RC  final   : undefined" in out
+    assert "w   final   : undefined" in out
+
+
+@pytest.mark.parametrize("evolve, semantics, symbol, attr", [
+    ("weight", gg.GraphSemantics(), "w", "weight"),
+    ("distance", gg.GraphSemantics(), "d", "distance"),
+    ("distance", gg.GraphSemantics(weight_attr="strength", distance_attr="length"), "d", "length"),
+    ("distance", gg.GraphSemantics(weight_attr="weight", distance_attr="weight"), "d", "weight"),
+])
+def test_summary_uses_the_recorded_evolving_quantity(capsys, evolve, semantics, symbol, attr):
+    sim = gg.RicciFlowSimulator.from_networkx(
+        nx.barbell_graph(4, 0), curvature="ollivier", evolve=evolve, semantics=semantics,
+    ).run(iterations=3, step=0.1, early_stop=False)
+    values = list(nx.get_edge_attributes(sim.result_graph, attr).values())
+    assert min(values) < max(values)
+    assert sim.result.evolving_attr == attr
+
+    sim.summary()
+    out = capsys.readouterr().out
+    assert f"Evolving quantity    : {evolve} ({attr})" in out
+    assert f"{symbol}   final   : [{min(values):.4f}, {max(values):.4f}]" in out
+    if evolve == "distance":
+        assert "w   final" not in out
+
+
+def test_summary_uses_initial_state_when_no_updates_were_committed(capsys):
+    sim = gg.RicciFlowSimulator.from_networkx(
+        nx.barbell_graph(4, 0), curvature="ollivier",
+    ).run(iterations=0)
+    assert sim.convergence == []
+    rc = list(nx.get_edge_attributes(sim.result_graph, "ricciCurvature").values())
+    assert max(rc) > min(rc)
+
+    sim.summary()
+    out = capsys.readouterr().out
+    assert f"Final RC difference  : {max(rc) - min(rc):.6f}" in out

@@ -192,28 +192,41 @@ class RicciFlowSimulator:
         return self.snapshots[i]
 
     def summary(self) -> None:
-        """Print a summary of the run."""
+        """Print final-state curvature and the recorded evolving edge quantity."""
         if not self._ran:
             print("Simulation not run yet. Call .run() first.")
             return
         G0, Gf = self.initial_graph, self.result_graph
         rc0 = list(nx.get_edge_attributes(G0, "ricciCurvature").values())
         rcf = list(nx.get_edge_attributes(Gf, "ricciCurvature").values())
-        w0 = list(nx.get_edge_attributes(G0, self.weight).values())
-        wf = list(nx.get_edge_attributes(Gf, self.weight).values())
+        q_role = self.result.evolve or self.evolve
+        q_attr = self.result.evolving_attr or (
+            self.distance if q_role == "distance" else self.weight
+        )
+        q_symbol = "d" if q_role == "distance" else "w"
+        q0 = list(nx.get_edge_attributes(G0, q_attr).values())
+        qf = list(nx.get_edge_attributes(Gf, q_attr).values())
         kind = "directed" if G0.is_directed() else "undirected"
         print("=" * 55)
         print(f"  Ricci Flow Simulation Summary ({kind})")
         print("=" * 55)
         print(f"  Iterations completed : {self.result.iterations_completed}")
         print(f"  Terminated because   : {self.termination_reason}")
-        if self.convergence:
-            print(f"  Final RC difference  : {self.convergence[-1]:.6f}")
+        final_spread = f"{max(rcf) - min(rcf):.6f}" if rcf else "undefined"
+        print(f"  Final RC difference  : {final_spread}")
+        print(f"  Evolving quantity    : {q_role} ({q_attr})")
         print(f"  Initial : {G0.number_of_nodes()} nodes, {G0.number_of_edges()} edges")
         print(f"  Final   : {Gf.number_of_nodes()} nodes, {Gf.number_of_edges()} edges")
-        if rc0 and rcf:
+        if rc0:
             print(f"  RC  initial : [{min(rc0):.4f}, {max(rc0):.4f}]  mean={np.mean(rc0):.4f}")
+        if rcf:
             print(f"  RC  final   : [{min(rcf):.4f}, {max(rcf):.4f}]  mean={np.mean(rcf):.4f}")
-            print(f"  w   initial : [{min(w0):.4f}, {max(w0):.4f}]  mean={np.mean(w0):.4f}")
-            print(f"  w   final   : [{min(wf):.4f}, {max(wf):.4f}]  mean={np.mean(wf):.4f}")
+        else:
+            print("  RC  final   : undefined")
+        if q0:
+            print(f"  {q_symbol}   initial : [{min(q0):.4f}, {max(q0):.4f}]  mean={np.mean(q0):.4f}")
+        if qf:
+            print(f"  {q_symbol}   final   : [{min(qf):.4f}, {max(qf):.4f}]  mean={np.mean(qf):.4f}")
+        else:
+            print(f"  {q_symbol}   final   : undefined")
         print("=" * 55)

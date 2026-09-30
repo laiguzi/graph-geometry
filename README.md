@@ -92,10 +92,16 @@ resolves to `mixed` with β = 0.8, warns, and is recorded as such.
 β is chosen by `beta_strategy`: `constant`, `degree_proportional`,
 `weight_proportional`, or `node_attr` (read from each node). β lies in [0, 1]
 and is clamped to 0 at sinks and 1 at sources, so every measure has mass 1.
-`lin_lu_yau` and `ollivier` need a strongly connected digraph. `eidi_jost`
+`lin_lu_yau` and `ollivier` require finite directed distances for the evaluated
+endpoint pairs and the support pairs used by the selected kernels. Strong
+connectivity is sufficient, but some requests are also defined on digraphs
+that are not strongly connected; unreachable required pairs raise
+`CurvatureDomainError`. `eidi_jost`
 ([Eidi & Jost 2020](https://doi.org/10.1038/s41598-020-68619-6)) reads measures
-from in-neighbours of the tail and out-neighbours of the head, so it is defined
-on any digraph, with κ ∈ [−2, 1].
+from in-neighbours of the tail and out-neighbours of the head, so its required
+routes exist without a strong-connectivity assumption. Its bound
+κ ∈ [−2, 1] holds when all edge distances are equal (including the default
+unit distances); with non-uniform edge distances, curvature can be below −2.
 
 **Signed graphs.** No transport curvature accepts negative weights, since they
 would give signed measures. Compute on `|w|` and keep the sign as an attribute,
