@@ -707,6 +707,11 @@ viz = [
 ]
 
 [package.dev-dependencies]
+app-runtime = [
+    { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "matplotlib", version = "3.11.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "streamlit" },
+]
 dev = [
     { name = "pytest" },
     { name = "ruff" },
@@ -726,6 +731,10 @@ requires-dist = [
 provides-extras = ["viz", "app"]
 
 [package.metadata.requires-dev]
+app-runtime = [
+    { name = "matplotlib", specifier = ">=3.10.9" },
+    { name = "streamlit", specifier = ">=1.59.0" },
+]
 dev = [
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "ruff", specifier = ">=0.15.20" },

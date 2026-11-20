@@ -37,7 +37,22 @@ app = [
 requires = ["uv_build>=0.10.6,<0.11.0"]
 build-backend = "uv_build"
 
+# Streamlit Community Cloud installs from the highest-priority dependency file
+# it finds, and `uv.lock` outranks `requirements.txt`. It therefore runs a plain
+# `uv sync`, which installs no extra, so the `app` extra above never reaches the
+# host and the interface fails on its matplotlib import. A default dependency
+# group is installed by `uv sync` without being named, so the deployment gets
+# what it needs while `pip install graph-geometry[app]` stays the documented
+# way to install the interface. Keep `dev` listed or `uv sync` stops providing
+# pytest and ruff.
+[tool.uv]
+default-groups = ["dev", "app-runtime"]
+
 [dependency-groups]
+app-runtime = [
+    "matplotlib>=3.10.9",
+    "streamlit>=1.59.0",
+]
 dev = [
     "pytest>=9.1.1",
     "ruff>=0.15.20",
