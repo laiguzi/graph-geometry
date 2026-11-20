@@ -1,0 +1,9 @@
+# Dependency manifest for Streamlit Community Cloud, which installs this file
+# from the repository root. Local development uses uv and uv.lock instead.
+#
+# "." installs this package from the checkout: the app imports graph_geometry,
+# which lives under src/ and is not published to PyPI. The [app] extra adds
+# streamlit and matplotlib, so the deployed set matches pyproject.toml rather
+# than drifting from it.
+
+.[app]

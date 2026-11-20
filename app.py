@@ -355,6 +355,14 @@ TRAJECTORY_EDGE_LIMIT = 60
 
 _CPU_COUNT = os.cpu_count() or 1
 
+#: Loading a plugin executes a .py file named in the interface. That is a local
+#: convenience, but on a publicly reachable deployment the person typing the
+#: path does not own the host, so it is opt-in and defaults to off: an
+#: unconfigured deployment is safe. Enable it for a local run with
+#:
+#:     GG_ALLOW_PLUGINS=1 uv run --extra app streamlit run app.py
+ALLOW_PLUGINS = os.environ.get("GG_ALLOW_PLUGINS") == "1"
+
 _TIERS = ("core", "specialized", "experimental")
 _TIER_TITLE = {"core": "Core", "specialized": "Specialized", "experimental": "Experimental"}
 
@@ -639,20 +647,28 @@ with st.sidebar:
     input_kind = None if G_input is None else ("directed" if is_directed_input else "undirected")
 
     # ── Curvature: the selector IS the registry ──────────────────────────────
-    with st.expander("➕ Load a curvature plugin", expanded=False):
+    if ALLOW_PLUGINS:
+        with st.expander("➕ Load a curvature plugin", expanded=False):
+            st.caption(
+                "Path to a `.py` file that calls `@gg.register_curvature`. It is "
+                "executed, so only point this at files you trust. "
+                "Try `examples/plugin_balanced_forman.py`."
+            )
+            plugin_path = st.text_input("Plugin file", key="plugin_path",
+                                        label_visibility="collapsed")
+            if plugin_path:
+                try:
+                    load_plugin(plugin_path)
+                    st.success(f"Registered: {', '.join(curvature_names())}")
+                except Exception as ex:  # noqa: BLE001 - surface any load error
+                    st.error(f"Could not load plugin: {ex}")
+    else:
         st.caption(
-            "Path to a `.py` file that calls `@gg.register_curvature`. It is "
-            "executed, so only point this at files you trust. "
-            "Try `examples/plugin_balanced_forman.py`."
+            "Loading a curvature plugin executes a file on the host, so it is "
+            "disabled here. Run the app locally with `GG_ALLOW_PLUGINS=1` to "
+            "register your own definitions; `examples/plugin_balanced_forman.py` "
+            "shows the interface."
         )
-        plugin_path = st.text_input("Plugin file", key="plugin_path",
-                                    label_visibility="collapsed")
-        if plugin_path:
-            try:
-                load_plugin(plugin_path)
-                st.success(f"Registered: {', '.join(curvature_names())}")
-            except Exception as ex:  # noqa: BLE001 - surface any load error
-                st.error(f"Could not load plugin: {ex}")
 
     specs = curvature_specs()
     spec = st.selectbox(

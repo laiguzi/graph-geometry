@@ -22,6 +22,18 @@ from graph_geometry.curvature import write_curvature  # noqa: E402
 APP = Path(__file__).resolve().parents[1] / "app.py"
 
 
+@pytest.fixture(autouse=True)
+def _allow_plugins(monkeypatch):
+    """Exercise the local tool, where plugin loading is enabled.
+
+    ``app.py`` gates the plugin loader behind ``GG_ALLOW_PLUGINS`` so that a
+    publicly reachable deployment does not execute a file named by a visitor.
+    The tests here cover the loader itself; the gate is covered by
+    ``test_plugin_loader_is_disabled_by_default``.
+    """
+    monkeypatch.setenv("GG_ALLOW_PLUGINS", "1")
+
+
 def _run():
     at = AppTest.from_file(str(APP), default_timeout=60)
     at.run()
@@ -154,6 +166,19 @@ def test_forman_exposes_no_ot_parameters():
 
 
 # ── the plugin loader ───────────────────────────────────────────────────────
+
+
+def test_plugin_loader_is_disabled_by_default(monkeypatch):
+    """Unconfigured, the app must not offer to execute a file named in the UI.
+
+    This is the one control that a public deployment cannot be allowed to
+    inherit from the local tool, so it is asserted against a clean environment
+    rather than the enabled one the other tests here use.
+    """
+    monkeypatch.delenv("GG_ALLOW_PLUGINS", raising=False)
+    at = _run()
+    assert "Plugin file" not in [widget.label for widget in at.text_input]
+    assert any("GG_ALLOW_PLUGINS" in caption.value for caption in at.caption)
 
 
 def test_plugin_file_loader_registers_and_offers_the_method():
